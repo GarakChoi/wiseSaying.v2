@@ -1,11 +1,11 @@
 package com.back.domain.post.post.controller;
 
 import com.back.domain.member.member.entity.Member;
-import com.back.domain.member.member.service.MemberService;
 import com.back.domain.post.post.dto.PostDto;
 import com.back.domain.post.post.entity.Post;
 import com.back.domain.post.post.service.PostService;
 import com.back.global.exception.ServiceException;
+import com.back.global.rq.Rq;
 import com.back.global.rsData.RsData;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,19 +14,17 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@Validated
 @RequestMapping("/api/v1/posts")
 @RequiredArgsConstructor
 @Tag(name = "ApiV1PostController", description = "API 글 컨트롤러")
 public class ApiV1PostController {
     private final PostService postService;
-    private final MemberService memberService;
+    private final Rq rq;
 
     @GetMapping
     @Transactional(readOnly = true)
@@ -52,8 +50,15 @@ public class ApiV1PostController {
     @DeleteMapping("/{id}")
     @Transactional
     @Operation(summary = "삭제")
-    public RsData<Void> delete(@PathVariable int id) {
+    public RsData<Void> delete(
+            @PathVariable int id
+    ) {
+        Member actor = rq.getActor();
+
         Post post = postService.findById(id).get();
+
+        if (!actor.equals(post.getAuthor()))
+            throw new ServiceException("403-1", "글 삭제 권한이 없습니다.");
 
         postService.delete(post);
 
@@ -78,12 +83,9 @@ public class ApiV1PostController {
     @Transactional
     @Operation(summary = "작성")
     public RsData<PostDto> write(
-            @Valid @RequestBody PostWriteReqBody reqBody,
-            @NotBlank @Size(min = 2, max = 30) String username,
-            @NotBlank @Size(min = 2, max = 30) String password
+            @Valid @RequestBody PostWriteReqBody reqBody
     ) {
-        Member actor = memberService.findByUsername(username).orElseThrow(() -> new ServiceException("401-1", "존재하지 않는 회원입니다."));
-        if ( !actor.getPassword().equals(password) ) throw new ServiceException("401-1", "비밀번호가 일치하지 않습니다.");
+        Member actor = rq.getActor();
 
         Post post = postService.write(actor, reqBody.title, reqBody.content);
 
@@ -111,7 +113,13 @@ public class ApiV1PostController {
             @PathVariable int id,
             @Valid @RequestBody PostModifyReqBody reqBody
     ) {
+        Member actor = rq.getActor();
+
         Post post = postService.findById(id).get();
+
+        if (!actor.equals(post.getAuthor()))
+            throw new ServiceException("403-1", "글 수정 권한이 없습니다.");
+
         postService.modify(post, reqBody.title, reqBody.content);
 
         return new RsData<>(
